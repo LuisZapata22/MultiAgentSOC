@@ -1,0 +1,63 @@
+flowchart LR
+    U[Security Analyst]
+    subgraph H[MCP Host]
+        UI["Web Dashboard / CLI"]
+        ORCH[Internal Orchestrator]
+    end
+    subgraph A[Specialized Agents]
+        T[Telemetry Agent]
+        D[Detection Agent]
+        P[Port Analyzer Agent]
+        M["MITRE ATT&amp;CK Agent"]
+        V[Validation Agent]
+        R[Report Agent]
+    end
+    subgraph S1[MCP Server: Evidence]
+        ERES[("Resources:<br/>raw logs<br/>normalized events<br/>schemas<br/>intermediate results")]
+        ETOOL[["Tools:<br/>read_evidence()<br/>normalize_telemetry()<br/>filter_time_range()"]]
+        EPRM[["Prompts:<br/>summarize_source<br/>extract_relevant_entities"]]
+    end
+    subgraph S2[MCP Server: Detection]
+        DTOOL[["Tools:<br/>detect_anomalies()<br/>correlate_events()<br/>score_risk()"]]
+        DPRM[["Prompts:<br/>behavior_analysis<br/>incident_hypothesis"]]
+    end
+    subgraph S3[MCP Server: Port Analysis]
+        PTOOL[["Tools:<br/>analyze_ports()<br/>identify_scans()<br/>detect_unusual_port_usage()"]]
+        PPRM[["Prompts:<br/>port_summary<br/>scan_explanation"]]
+    end
+    subgraph S4[MCP Server: MITRE]
+        MTOOL[["Tools:<br/>map_to_mitre()<br/>link_techniques()<br/>estimate_coverage()"]]
+        MPRM[["Prompts:<br/>mitre_mapping<br/>technique_justification"]]
+    end
+    subgraph S5[MCP Server: Validation]
+        VTOOL[["Tools:<br/>validate_finding()<br/>cross_check_evidence()<br/>compute_confidence()"]]
+        VPRM[["Prompts:<br/>consistency_review<br/>quality_control"]]
+    end
+    subgraph S6[MCP Server: Reporting]
+        RTOOL[["Tools:<br/>generate_report_md()<br/>export_pdf()<br/>generate_executive_summary()"]]
+        RPRM[["Prompts:<br/>technical_report<br/>executive_report<br/>recommendations"]]
+    end
+    U --> UI
+    UI --> ORCH
+    ORCH --> T
+    ORCH --> D
+    ORCH --> P
+    ORCH --> M
+    ORCH --> V
+    ORCH --> R
+    T -->|MCP client calls| S1
+    D -->|MCP client calls| S2
+    P -->|MCP client calls| S3
+    M -->|MCP client calls| S4
+    V -->|MCP client calls| S5
+    R -->|MCP client calls| S6
+    T -->|normalized telemetry| D
+    T -->|normalized telemetry| P
+    D -->|technical findings| M
+    P -->|port findings| M
+    M -->|MITRE-mapped findings| V
+    D -->|candidate findings| V
+    V -->|validated findings + confidence| R
+    M -->|MITRE context| R
+    R -->|final report| UI
+    UI <-->|elicitation: missing context| ORCH

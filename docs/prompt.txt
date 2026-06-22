@@ -1,0 +1,58 @@
+# Build Prompt: SOC Agentic Telemetry Analyzer (MCP-based)
+
+Use this prompt as the initial instruction to an AI coding agent (e.g. Claude Code) in a fresh repository.
+
+---
+
+## Prompt
+
+You are building a proof-of-concept **multi-agent SOC (Security Operations Center) telemetry analysis platform** orchestrated through the **Model Context Protocol (MCP)**. This is a defensive security tool only — no offensive capability, no autonomous exploitation, no automated remediation. Its purpose is to help a human analyst understand network telemetry, surface possible threats, map them to MITRE ATT&CK, and produce a reviewable report.
+
+### Tech stack (fixed)
+
+- **MCP Host / UI**: React web dashboard.
+- **MCP Servers**: separate Python processes, one per domain (Evidence, Detection, Port Analysis, MITRE, Validation, Reporting), each a real MCP server using the official `mcp` Python SDK, communicating over stdio or SSE — not a single process faking multiple servers.
+- **Orchestrator**: Python, coordinating agent-to-agent flow and acting as an MCP client to all six servers. Use LangGraph if it fits cleanly; otherwise a custom state-machine orchestrator is fine — your call, but justify the choice briefly in `ARCHITECTURE.md`.
+- **Telemetry input**: real Zeek/ntopng/JSON/CSV logs will be supplied by me as sample data; do not hardcode assumptions that only work with synthetic data. Build the Evidence Server's parsers against actual Zeek log formats (conn.log, dns.log, http.log, etc.) and ntopng JSON/CSV exports.
+- **Language for agents**: Python, using an LLM (Claude via the Anthropic API) for the reasoning steps inside each agent (Detection, Port Analyzer, MITRE, Validation, Report). Telemetry parsing/normalization itself should be deterministic code, not LLM-driven.
+
+### Architecture to implement
+
+Four layers, matching the project spec exactly:
+
+1. **MCP Host** (React dashboard): upload telemetry files, view live agent-to-agent trace, view findings as they're produced, respond to elicitation requests for missing context, review and approve the final report.
+2. **Orchestrator** (Python): owns analysis state, routes work between agents in this sequence: Telemetry Agent → Detection Agent → Port Analyzer Agent → MITRE ATT&CK Agent → Validation Agent → Report Agent. Must support the Port Analyzer being invoked conditionally (only when port-related signals are present from Detection). Must persist a structured trace of every agent exchange (sender, receiver, task, evidence used, result, confidence, next action) so the full reasoning chain is inspectable.
+3. **MCP Servers** (six, as separate processes): Evidence Server, Detection Server, Port Analysis Server, MITRE Server, Validation Server, Reporting Server — implement the example tools listed for each in the project spec (e.g. `read_evidence`, `normalize_telemetry`, `detect_anomalies`, `analyze_ports`, `map_to_mitre`, `validate_finding`, `generate_report_md`, etc.). Use MCP **resources** for evidence/intermediate data exposed by URI, MCP **tools** for callable functions, and MCP **prompts** for reusable analysis prompt templates per stage.
+4. **Agents** (six): Telemetry, Detection, Port Analyzer, MITRE ATT&CK, Validation, Report — each agent calls only its relevant MCP server(s), receives structured input from the previous stage, and emits structured output forward. No agent should silently swallow uncertainty — anything not well-supported by evidence must be flagged, not asserted.
+
+### Build order (please follow this sequence and check in with me at each checkpoint rather than building everything silently)
+
+1. Repo scaffold + `ARCHITECTURE.md` describing layer boundaries and chosen orchestration approach.
+2. Evidence Server: real Zeek/ntopng/JSON/CSV parsing, normalization into a common event schema. I will provide sample log files for you to test parsing against — ask me for them before writing parser logic if none are in the repo yet.
+3. Orchestrator skeleton + Telemetry Agent wired to Evidence Server end-to-end (upload → normalized events), with the trace log working.
+4. Detection Server + Detection Agent (anomaly/pattern detection on normalized events).
+5. Port Analysis Server + Port Analyzer Agent.
+6. MITRE Server + MITRE ATT&CK Agent (use the real MITRE ATT&CK technique/tactic taxonomy — fetch or bundle actual ATT&CK data, don't invent technique IDs).
+7. Validation Server + Validation Agent (confidence scoring, evidence cross-checking, marking weak/unconfirmed findings).
+8. Reporting Server + Report Agent (technical report + executive summary, markdown output, PDF export).
+9. React dashboard wired to the orchestrator: upload, live trace view, findings view, elicitation handling, final report review/approval.
+10. End-to-end test using my real sample logs, plus a README covering setup, running each MCP server, and running the full pipeline.
+
+### Constraints
+
+- Defensive only: do not implement or stub anything resembling offensive tooling, exploit generation, or automated remediation actions. Recommendations in the report are advisory text for a human, not executable actions.
+- Every finding the Report Agent includes must carry its confidence score and evidence references — no unsupported claims in the final report.
+- Keep each MCP server's tool surface focused on its stated domain; don't let logic leak across servers (e.g. MITRE mapping logic belongs in the MITRE Server, not the Orchestrator).
+- Code should be readable and documented well enough to defend in an academic/thesis context — favor clarity over cleverness.
+
+### First step
+
+Start with step 1 (scaffold + `ARCHITECTURE.md`) and step 2 (Evidence Server). Ask me for sample Zeek/ntopng log files before writing the parsers if they aren't already in the repo.
+
+---
+
+## Notes for you (not part of the prompt above)
+
+- Drop your real sample logs into the repo (e.g. `samples/zeek/`, `samples/ntopng/`) before or right after kicking this off — the prompt explicitly tells the coding tool to ask for them, but handing them over up front will save a round trip.
+- The build-order/checkpoint structure is deliberate: a project this size will go sideways if the tool tries to generate all six servers, the orchestrator, and the React app in one shot. Checkpointing after each MCP server lets you catch schema/format mismatches early, especially around real Zeek field names.
+- If you want, I can also draft the `ARCHITECTURE.md` skeleton or the common normalized-event schema now, before you hand this off — that would give the coding tool a stronger starting contract between layers.
