@@ -1,2 +1,6 @@
 mcp
 pydantic
+google-genai
+groq
+anthropic
+python-dotenv
