@@ -6,6 +6,7 @@ from .agents.telemetry_agent import TelemetryAgent
 from .agents.detection_agent import DetectionAgent
 from .agents.port_analyzer_agent import PortAnalyzerAgent
 from .agents.mitre_agent import MitreAgent
+from .agents.validation_agent import ValidationAgent
 
 class OrchestratorStateMachine:
     def __init__(self, db_path: str = "trace.db"):
@@ -15,6 +16,7 @@ class OrchestratorStateMachine:
         self.detection_agent = DetectionAgent()
         self.port_analyzer_agent = PortAnalyzerAgent()
         self.mitre_agent = MitreAgent()
+        self.validation_agent = ValidationAgent()
         self.current_findings = []
         
     async def process_telemetry(self, file_path: str, source_type: str = "zeek"):
@@ -221,6 +223,63 @@ class OrchestratorStateMachine:
                 sender="MitreAgent",
                 receiver="Host",
                 task="map_to_mitre",
+                evidence_used=[],
+                result={"status": "error", "message": str(e)},
+                confidence=0.0,
+                next_action=OrchestratorState.BLOCKED
+            )
+            self.logger.log(trace)
+
+    async def run_validation(self):
+        """
+        Executes the Validation Agent: deterministic rule checks + LLM plain-language summary.
+        Transitions from VALIDATING -> REPORTING.
+        """
+        if self.state != OrchestratorState.VALIDATING:
+            raise RuntimeError(f"Cannot run validation from state {self.state}")
+
+        print(f"[*] State transition: {self.state} -> processing validation")
+
+        try:
+            result = await self.validation_agent.run_validation(self.current_findings)
+
+            next_state = OrchestratorState.REPORTING
+
+            # Store the full validation output for the Reporting stage
+            self.validation_result = result
+
+            provider_info = result.pop("provider_info", {})
+            det_report = result.get("deterministic_report", {})
+            summary = det_report.get("summary", {})
+
+            trace = TraceRecord(
+                sender="ValidationAgent",
+                receiver="ReportingAgent",
+                task="validate_findings",
+                evidence_used=["all_previous_findings"],
+                result={
+                    "status": result["status"],
+                    "summary": summary,
+                    "llm_summary": result.get("llm_summary", {})
+                },
+                confidence=1.0,  # Deterministic layer is always 1.0
+                next_action=next_state,
+                llm_provider=provider_info.get("provider"),
+                fallback_triggered=provider_info.get("fallback_triggered", False)
+            )
+            self.logger.log(trace)
+
+            print(f"[*] Agent finished. Trace recorded. Next state: {next_state}")
+            self.state = next_state
+
+        except Exception as e:
+            print(f"[!] Error during validation: {e}")
+            self.state = OrchestratorState.BLOCKED
+
+            trace = TraceRecord(
+                sender="ValidationAgent",
+                receiver="Host",
+                task="validate_findings",
                 evidence_used=[],
                 result={"status": "error", "message": str(e)},
                 confidence=0.0,

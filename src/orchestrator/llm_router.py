@@ -27,7 +27,13 @@ class LLMRouter:
                     return {"result": result, "provider": "groq", "fallback_triggered": True}
                 except Exception as e2:
                     print(f"[!] Groq fallback also failed: {e2}")
-                    raise RuntimeError(f"Both primary (Gemini) and fallback (Groq) LLM calls failed. Errors: Gemini({e}), Groq({e2})")
+                    # Return a degraded result instead of raising — deterministic layers still have value
+                    return {
+                        "result": "{}",
+                        "provider": "none",
+                        "fallback_triggered": True,
+                        "error": f"Gemini: {e} | Groq: {e2}"
+                    }
 
     def _call_gemini(self, prompt: str) -> str:
         if not self.gemini_key:
@@ -52,7 +58,7 @@ class LLMRouter:
                     "content": prompt,
                 }
             ],
-            model="llama3-8b-8192",
+            model="llama-3.3-70b-versatile",
         )
         return chat_completion.choices[0].message.content
 
