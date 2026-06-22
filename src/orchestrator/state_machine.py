@@ -5,6 +5,7 @@ from .trace import TraceLogger
 from .agents.telemetry_agent import TelemetryAgent
 from .agents.detection_agent import DetectionAgent
 from .agents.port_analyzer_agent import PortAnalyzerAgent
+from .agents.mitre_agent import MitreAgent
 
 class OrchestratorStateMachine:
     def __init__(self, db_path: str = "trace.db"):
@@ -13,6 +14,7 @@ class OrchestratorStateMachine:
         self.telemetry_agent = TelemetryAgent()
         self.detection_agent = DetectionAgent()
         self.port_analyzer_agent = PortAnalyzerAgent()
+        self.mitre_agent = MitreAgent()
         self.current_findings = []
         
     async def process_telemetry(self, file_path: str, source_type: str = "zeek"):
@@ -165,6 +167,60 @@ class OrchestratorStateMachine:
                 sender="PortAnalyzerAgent",
                 receiver="Host",
                 task="analyze_port_behavior",
+                evidence_used=[],
+                result={"status": "error", "message": str(e)},
+                confidence=0.0,
+                next_action=OrchestratorState.BLOCKED
+            )
+            self.logger.log(trace)
+
+    async def run_mitre_mapping(self):
+        """
+        Executes the MITRE mapping agent to assign tactics/techniques.
+        """
+        if self.state != OrchestratorState.MITRE_MAPPING:
+            raise RuntimeError(f"Cannot run MITRE mapping from state {self.state}")
+            
+        print(f"[*] State transition: {self.state} -> processing MITRE mapping")
+        
+        try:
+            result = await self.mitre_agent.run_mitre_mapping(self.current_findings)
+            
+            next_state = OrchestratorState.VALIDATING
+            
+            # Since MITRE mappings aren't new findings but enrichments,
+            # we just append them to the cumulative state or store them separately.
+            self.current_findings.append({"mitre_mappings": result.get("mitre_mappings", [])})
+            
+            # Evidence used is implicitly all the findings passed in
+            evidence_used = ["all_previous_findings"]
+            
+            provider_info = result.pop("provider_info", {})
+            
+            trace = TraceRecord(
+                sender="MitreAgent",
+                receiver="ValidationAgent",
+                task="map_to_mitre",
+                evidence_used=evidence_used,
+                result=result,
+                confidence=0.9, # Taxonomy lookup is usually high confidence
+                next_action=next_state,
+                llm_provider=provider_info.get("provider"),
+                fallback_triggered=provider_info.get("fallback_triggered", False)
+            )
+            self.logger.log(trace)
+            
+            print(f"[*] Agent finished. Trace recorded. Next state: {next_state}")
+            self.state = next_state
+            
+        except Exception as e:
+            print(f"[!] Error during MITRE mapping: {e}")
+            self.state = OrchestratorState.BLOCKED
+            
+            trace = TraceRecord(
+                sender="MitreAgent",
+                receiver="Host",
+                task="map_to_mitre",
                 evidence_used=[],
                 result={"status": "error", "message": str(e)},
                 confidence=0.0,
