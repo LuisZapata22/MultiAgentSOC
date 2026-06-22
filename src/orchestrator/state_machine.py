@@ -4,6 +4,7 @@ from .models import OrchestratorState, TraceRecord
 from .trace import TraceLogger
 from .agents.telemetry_agent import TelemetryAgent
 from .agents.detection_agent import DetectionAgent
+from .agents.port_analyzer_agent import PortAnalyzerAgent
 
 class OrchestratorStateMachine:
     def __init__(self, db_path: str = "trace.db"):
@@ -11,6 +12,8 @@ class OrchestratorStateMachine:
         self.logger = TraceLogger(db_path)
         self.telemetry_agent = TelemetryAgent()
         self.detection_agent = DetectionAgent()
+        self.port_analyzer_agent = PortAnalyzerAgent()
+        self.current_findings = []
         
     async def process_telemetry(self, file_path: str, source_type: str = "zeek"):
         """
@@ -25,22 +28,19 @@ class OrchestratorStateMachine:
         
         print(f"[*] Invoking Telemetry Agent on {file_path}...")
         try:
-            # The agent acts as an MCP client and calls the Evidence Server
             result = await self.telemetry_agent.normalize(file_path, source_type)
             
-            # Transition depends on result
             next_state = OrchestratorState.DETECTING if result["status"] == "success" else OrchestratorState.BLOCKED
             
-            # Record trace
             trace = TraceRecord(
                 sender="Host",
                 receiver="TelemetryAgent",
                 task="normalize_telemetry",
                 evidence_used=[file_path],
                 result=result,
-                confidence=1.0, # Deterministic parser
+                confidence=1.0,
                 next_action=next_state,
-                llm_provider=None, # No LLM in this stage
+                llm_provider=None,
                 fallback_triggered=False
             )
             self.logger.log(trace)
@@ -65,8 +65,7 @@ class OrchestratorStateMachine:
 
     async def run_detection(self):
         """
-        Executes the detection agent which fetches normalized events,
-        calls the detection server for prompts, and uses LLMRouter.
+        Executes the detection agent.
         """
         if self.state != OrchestratorState.DETECTING:
             raise RuntimeError(f"Cannot run detection from state {self.state}")
@@ -76,17 +75,16 @@ class OrchestratorStateMachine:
         try:
             result = await self.detection_agent.run_detection()
             
-            # Decide next state based on output
             requires_port_analysis = result.get("requires_port_analysis", False)
             next_state = OrchestratorState.PORT_ANALYSIS if requires_port_analysis else OrchestratorState.MITRE_MAPPING
             
-            # Get evidence refs for the trace
             findings = result.get("findings", [])
+            self.current_findings.extend(findings)
+            
             evidence_used = []
             for f in findings:
                 evidence_used.extend(f.get("evidence_refs", []))
             
-            # Remove provider_info from result for cleaner trace (but record it)
             provider_info = result.pop("provider_info", {})
             
             trace = TraceRecord(
@@ -95,7 +93,7 @@ class OrchestratorStateMachine:
                 task="detect_anomalies",
                 evidence_used=list(set(evidence_used)),
                 result=result,
-                confidence=0.8, # Placeholder confidence
+                confidence=0.8,
                 next_action=next_state,
                 llm_provider=provider_info.get("provider"),
                 fallback_triggered=provider_info.get("fallback_triggered", False)
@@ -120,3 +118,56 @@ class OrchestratorStateMachine:
             )
             self.logger.log(trace)
 
+    async def run_port_analysis(self):
+        """
+        Executes the port analyzer agent if requested by Detection.
+        """
+        if self.state != OrchestratorState.PORT_ANALYSIS:
+            raise RuntimeError(f"Cannot run port analysis from state {self.state}")
+            
+        print(f"[*] State transition: {self.state} -> processing port analysis")
+        
+        try:
+            result = await self.port_analyzer_agent.run_port_analysis(self.current_findings)
+            
+            next_state = OrchestratorState.MITRE_MAPPING
+            
+            findings = result.get("findings", [])
+            self.current_findings.extend(findings)
+            
+            evidence_used = []
+            for f in findings:
+                evidence_used.extend(f.get("evidence_refs", []))
+            
+            provider_info = result.pop("provider_info", {})
+            
+            trace = TraceRecord(
+                sender="PortAnalyzerAgent",
+                receiver="MitreAgent",
+                task="analyze_port_behavior",
+                evidence_used=list(set(evidence_used)),
+                result=result,
+                confidence=0.8,
+                next_action=next_state,
+                llm_provider=provider_info.get("provider"),
+                fallback_triggered=provider_info.get("fallback_triggered", False)
+            )
+            self.logger.log(trace)
+            
+            print(f"[*] Agent finished. Trace recorded. Next state: {next_state}")
+            self.state = next_state
+            
+        except Exception as e:
+            print(f"[!] Error during port analysis: {e}")
+            self.state = OrchestratorState.BLOCKED
+            
+            trace = TraceRecord(
+                sender="PortAnalyzerAgent",
+                receiver="Host",
+                task="analyze_port_behavior",
+                evidence_used=[],
+                result={"status": "error", "message": str(e)},
+                confidence=0.0,
+                next_action=OrchestratorState.BLOCKED
+            )
+            self.logger.log(trace)
