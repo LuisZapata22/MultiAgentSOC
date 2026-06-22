@@ -14,7 +14,11 @@ class LLMRouter:
         Routes an LLM call to the appropriate provider based on the stage.
         """
         if stage == "report":
-            return self._call_claude(prompt)
+            try:
+                return self._call_claude(prompt)
+            except Exception as e:
+                print(f"[!] Claude call failed: {e}. Returning degraded result.")
+                return {"result": "{}", "provider": "none", "fallback_triggered": True, "error": str(e)}
         else:
             # Try Gemini first
             try:

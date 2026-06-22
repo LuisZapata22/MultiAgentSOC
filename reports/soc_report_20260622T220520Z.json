@@ -1,0 +1,32 @@
+{
+  "report_id": "6d5ead46",
+  "generated_at": "2026-06-22T22:05:20.818253+00:00",
+  "executive_summary": "Critical port scanning activity was detected from a single host.",
+  "risk_level": "CRITICAL",
+  "findings": [
+    {
+      "id": "1",
+      "title": "Horizontal port scan detected on port 445 (SMB).",
+      "description": "Horizontal port scan detected on port 445 (SMB).",
+      "mitre_technique_id": "T1046",
+      "mitre_tactic": "mitre-discovery",
+      "severity": "high",
+      "status": "CRITICAL",
+      "recommended_action": "Technique T1046 is on the HIGH_RISK watchlist."
+    },
+    {
+      "id": "2",
+      "title": "High connection volume to port 443.",
+      "description": "High connection volume to port 443.",
+      "mitre_technique_id": "",
+      "mitre_tactic": "",
+      "severity": "medium",
+      "status": "UNCONFIRMED",
+      "recommended_action": "No MITRE technique ID was assigned."
+    }
+  ],
+  "recommended_next_steps": [
+    "Isolate source host and escalate to Tier 2."
+  ],
+  "analyst_notes": "This report was generated without Claude AI assistance. LLM summary fields may be incomplete."
+}

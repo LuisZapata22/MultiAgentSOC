@@ -7,6 +7,7 @@ from .agents.detection_agent import DetectionAgent
 from .agents.port_analyzer_agent import PortAnalyzerAgent
 from .agents.mitre_agent import MitreAgent
 from .agents.validation_agent import ValidationAgent
+from .agents.reporting_agent import ReportingAgent
 
 class OrchestratorStateMachine:
     def __init__(self, db_path: str = "trace.db"):
@@ -17,7 +18,9 @@ class OrchestratorStateMachine:
         self.port_analyzer_agent = PortAnalyzerAgent()
         self.mitre_agent = MitreAgent()
         self.validation_agent = ValidationAgent()
+        self.reporting_agent = ReportingAgent()
         self.current_findings = []
+        self.validation_result = {}
         
     async def process_telemetry(self, file_path: str, source_type: str = "zeek"):
         """
@@ -280,6 +283,65 @@ class OrchestratorStateMachine:
                 sender="ValidationAgent",
                 receiver="Host",
                 task="validate_findings",
+                evidence_used=[],
+                result={"status": "error", "message": str(e)},
+                confidence=0.0,
+                next_action=OrchestratorState.BLOCKED
+            )
+            self.logger.log(trace)
+
+    async def run_reporting(self):
+        """
+        Executes the Reporting Agent — calls Claude for the final report
+        and persists it via the Reporting MCP Server.
+        Transitions from REPORTING -> COMPLETE.
+        """
+        if self.state != OrchestratorState.REPORTING:
+            raise RuntimeError(f"Cannot run reporting from state {self.state}")
+
+        print(f"[*] State transition: {self.state} -> generating final report")
+
+        try:
+            result = await self.reporting_agent.run_reporting(
+                validation_result=self.validation_result,
+                all_findings=self.current_findings
+            )
+
+            next_state = OrchestratorState.COMPLETE
+            provider_info = result.pop("provider_info", {})
+
+            trace = TraceRecord(
+                sender="ReportingAgent",
+                receiver="Host",
+                task="generate_report",
+                evidence_used=["all_previous_findings"],
+                result={
+                    "status": result["status"],
+                    "saved_path": result.get("saved_path"),
+                    "risk_level": result.get("report", {}).get("risk_level"),
+                },
+                confidence=1.0,
+                next_action=next_state,
+                llm_provider=provider_info.get("provider"),
+                fallback_triggered=provider_info.get("fallback_triggered", False)
+            )
+            self.logger.log(trace)
+
+            # Store for external access (e.g. dashboard API)
+            self.final_report = result.get("report", {})
+            self.report_path = result.get("saved_path")
+
+            print(f"[*] Report generation complete. Saved to: {self.report_path}")
+            self.state = next_state
+
+        except Exception as e:
+            print(f"[!] Error during reporting: {e}")
+            self.state = OrchestratorState.BLOCKED
+
+            trace = TraceRecord(
+                sender="ReportingAgent",
+                receiver="Host",
+                task="generate_report",
                 evidence_used=[],
                 result={"status": "error", "message": str(e)},
                 confidence=0.0,
