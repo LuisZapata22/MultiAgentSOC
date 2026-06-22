@@ -45,7 +45,7 @@ class LLMRouter:
         from google import genai
         client = genai.Client(api_key=self.gemini_key)
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model='gemini-3.5-flash',
             contents=prompt,
         )
         return response.text
@@ -62,7 +62,7 @@ class LLMRouter:
                     "content": prompt,
                 }
             ],
-            model="llama-3.3-70b-versatile",
+            model="openai/gpt-oss-120b",
         )
         return chat_completion.choices[0].message.content
 
@@ -79,6 +79,6 @@ class LLMRouter:
                     "content": prompt,
                 }
             ],
-            model="claude-3-7-sonnet-20250219",
+            model="claude-sonnet-4-6",
         )
         return {"result": message.content[0].text, "provider": "claude", "fallback_triggered": False}

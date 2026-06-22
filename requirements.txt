@@ -2,5 +2,8 @@ mcp
 pydantic
 google-genai
 groq
-anthropic
+anthropic>=0.111.0
+fastapi>=0.115.0
+uvicorn>=0.34.0
+python-multipart>=0.0.20
 python-dotenv

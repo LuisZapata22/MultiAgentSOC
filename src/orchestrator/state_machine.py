@@ -88,18 +88,19 @@ class OrchestratorStateMachine:
             findings = result.get("findings", [])
             self.current_findings.extend(findings)
             
-            evidence_used = []
-            for f in findings:
-                evidence_used.extend(f.get("evidence_refs", []))
-            
+            evidence_used = ["all_events_fetched"]
             provider_info = result.pop("provider_info", {})
             
             trace = TraceRecord(
                 sender="DetectionAgent",
-                receiver="PortAnalyzerAgent" if requires_port_analysis else "MitreAgent",
+                receiver="PortAnalyzerAgent" if next_state == OrchestratorState.PORT_ANALYSIS else "MitreAgent",
                 task="detect_anomalies",
-                evidence_used=list(set(evidence_used)),
-                result=result,
+                evidence_used=["all_events_fetched"],
+                result={
+                    "status": result["status"], 
+                    "findings_count": len(findings),
+                    "api_error": provider_info.get("error")
+                },
                 confidence=0.8,
                 next_action=next_state,
                 llm_provider=provider_info.get("provider"),
@@ -142,19 +143,21 @@ class OrchestratorStateMachine:
             findings = result.get("findings", [])
             self.current_findings.extend(findings)
             
-            evidence_used = []
-            for f in findings:
-                evidence_used.extend(f.get("evidence_refs", []))
+            evidence_used = ["all_previous_findings"]
             
             provider_info = result.pop("provider_info", {})
             
             trace = TraceRecord(
                 sender="PortAnalyzerAgent",
                 receiver="MitreAgent",
-                task="analyze_port_behavior",
-                evidence_used=list(set(evidence_used)),
-                result=result,
-                confidence=0.8,
+                task="analyze_ports",
+                evidence_used=evidence_used,
+                result={
+                    "status": result["status"], 
+                    "findings_count": len(findings),
+                    "api_error": provider_info.get("error")
+                },
+                confidence=0.85,
                 next_action=next_state,
                 llm_provider=provider_info.get("provider"),
                 fallback_triggered=provider_info.get("fallback_triggered", False)
@@ -193,12 +196,8 @@ class OrchestratorStateMachine:
             
             next_state = OrchestratorState.VALIDATING
             
-            # Since MITRE mappings aren't new findings but enrichments,
-            # we just append them to the cumulative state or store them separately.
-            self.current_findings.append({"mitre_mappings": result.get("mitre_mappings", [])})
-            
-            # Evidence used is implicitly all the findings passed in
-            evidence_used = ["all_previous_findings"]
+            mapped_findings = result.get("mitre_mappings", [])
+            self.current_findings.append({"mitre_mappings": mapped_findings})
             
             provider_info = result.pop("provider_info", {})
             
@@ -206,8 +205,12 @@ class OrchestratorStateMachine:
                 sender="MitreAgent",
                 receiver="ValidationAgent",
                 task="map_to_mitre",
-                evidence_used=evidence_used,
-                result=result,
+                evidence_used=["all_previous_findings"],
+                result={
+                    "status": result["status"], 
+                    "mapped_count": len(mapped_findings),
+                    "api_error": provider_info.get("error")
+                },
                 confidence=0.9, # Taxonomy lookup is usually high confidence
                 next_action=next_state,
                 llm_provider=provider_info.get("provider"),
@@ -263,7 +266,8 @@ class OrchestratorStateMachine:
                 result={
                     "status": result["status"],
                     "summary": summary,
-                    "llm_summary": result.get("llm_summary", {})
+                    "llm_summary": result.get("llm_summary", {}),
+                    "api_error": provider_info.get("error")
                 },
                 confidence=1.0,  # Deterministic layer is always 1.0
                 next_action=next_state,
@@ -319,6 +323,7 @@ class OrchestratorStateMachine:
                     "status": result["status"],
                     "saved_path": result.get("saved_path"),
                     "risk_level": result.get("report", {}).get("risk_level"),
+                    "api_error": provider_info.get("error")
                 },
                 confidence=1.0,
                 next_action=next_state,

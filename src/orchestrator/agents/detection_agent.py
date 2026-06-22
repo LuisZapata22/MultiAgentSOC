@@ -38,8 +38,8 @@ class DetectionAgent:
             det_session = await stack.enter_async_context(ClientSession(det_read, det_write))
             await det_session.initialize()
 
-            # 1. Fetch Events (limit to 50 for the POC so we don't blow up context window immediately)
-            ev_result = await ev_session.call_tool("read_evidence", arguments={"limit": 50, "offset": 0})
+            # 1. Fetch Events (increase limit so we actually capture the malicious traces at the end of the file)
+            ev_result = await ev_session.call_tool("read_evidence", arguments={"limit": 1000, "offset": 0})
             events_json = ev_result.content[0].text if ev_result.content else "[]"
 
             # 2. Get Prompt Template
