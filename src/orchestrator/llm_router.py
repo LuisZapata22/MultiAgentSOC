@@ -13,30 +13,26 @@ class LLMRouter:
         """
         Routes an LLM call to the appropriate provider based on the stage.
         """
-        if stage == "report":
-            try:
-                return self._call_claude(prompt)
-            except Exception as e:
-                print(f"[!] Claude call failed: {e}. Returning degraded result.")
-                return {"result": "{}", "provider": "none", "fallback_triggered": True, "error": str(e)}
-        else:
-            # Try Gemini first
+        try:
+            return self._call_claude(stage, prompt)
+        except Exception as e:
+            print(f"[!] Claude call failed: {e}. Falling back to Gemini...")
             try:
                 result = self._call_gemini(prompt)
-                return {"result": result, "provider": "gemini", "fallback_triggered": False}
-            except Exception as e:
-                print(f"[!] Gemini call failed: {e}. Falling back to Groq...")
+                return {"result": result, "provider": "gemini", "fallback_triggered": True, "error": str(e)}
+            except Exception as e2:
+                print(f"[!] Gemini fallback failed: {e2}. Falling back to Groq...")
                 try:
                     result = self._call_groq(prompt)
-                    return {"result": result, "provider": "groq", "fallback_triggered": True}
-                except Exception as e2:
-                    print(f"[!] Groq fallback also failed: {e2}")
-                    # Return a degraded result instead of raising — deterministic layers still have value
+                    return {"result": result, "provider": "groq", "fallback_triggered": True, "error": f"Claude: {e} | Gemini: {e2}"}
+                except Exception as e3:
+                    print(f"[!] Groq fallback also failed: {e3}")
+                    # Return a degraded result instead of raising
                     return {
                         "result": "{}",
                         "provider": "none",
                         "fallback_triggered": True,
-                        "error": f"Gemini: {e} | Groq: {e2}"
+                        "error": f"Claude: {e} | Gemini: {e2} | Groq: {e3}"
                     }
 
     def _call_gemini(self, prompt: str) -> str:
@@ -66,13 +62,22 @@ class LLMRouter:
         )
         return chat_completion.choices[0].message.content
 
-    def _call_claude(self, prompt: str) -> Dict[str, Any]:
+    def _call_claude(self, stage: str, prompt: str) -> Dict[str, Any]:
         if not self.claude_key:
             raise ValueError("ANTHROPIC_API_KEY is missing.")
         from anthropic import Anthropic
         client = Anthropic(api_key=self.claude_key)
+        
+        # Determine thinking budget based on stage
+        # Report agent uses medium thinking (4096), others use lower thinking (1024)
+        budget_tokens = 4096 if stage == "report" else 1024
+        
         message = client.messages.create(
-            max_tokens=4096,
+            max_tokens=8192,
+            thinking={
+                "type": "enabled",
+                "budget_tokens": budget_tokens
+            },
             messages=[
                 {
                     "role": "user",

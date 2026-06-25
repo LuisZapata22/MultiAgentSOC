@@ -42,25 +42,45 @@ class DetectionAgent:
             ev_result = await ev_session.call_tool("read_evidence", arguments={"limit": 1000, "offset": 0})
             events_json = ev_result.content[0].text if ev_result.content else "[]"
 
-            # 2. Get Prompt Template
-            prompt_result = await det_session.get_prompt("detection_reasoning_template", arguments={"events_json": events_json})
+            # 2. Run Deterministic Heuristics First
+            print("[*] Running Heuristic Detection Engine...")
+            heuristic_result = await det_session.call_tool("run_heuristic_detections", arguments={"events_json": events_json})
+            heuristic_findings_json = heuristic_result.content[0].text if heuristic_result.content else "[]"
+            
+            # Extract heuristic findings
+            heuristic_findings = []
+            try:
+                heuristic_findings = json.loads(heuristic_findings_json)
+            except Exception as e:
+                print(f"[!] Error parsing heuristic findings: {e}")
+
+            # 3. Get Prompt Template (passing in heuristics so LLM doesn't duplicate them)
+            prompt_result = await det_session.get_prompt(
+                "detection_reasoning_template", 
+                arguments={
+                    "events_json": events_json, 
+                    "heuristic_findings_json": heuristic_findings_json
+                }
+            )
             # The prompt result returns a list of messages. We just concatenate them into a string for the LLMRouter
             prompt_text = "\n".join([msg.content.text for msg in prompt_result.messages if msg.content.type == "text"])
 
-            # 3. Call LLM Router
-            print("[*] Calling LLM Router for Detection...")
+            # 4. Call LLM Router for Enrichment
+            print("[*] Calling LLM Router for Advanced Detection...")
             llm_response = self.llm_router.call(stage="detection", prompt=prompt_text)
             
-            # 4. Parse the result and determine next steps
-            # Since the LLM returns a markdown block usually, we try to extract the JSON.
+            # 5. Parse the LLM result
             raw_text = llm_response["result"]
-            findings = self._extract_json(raw_text)
+            llm_findings = self._extract_json(raw_text)
 
-            requires_port_analysis = any(f.get("requires_port_analysis", False) for f in findings)
+            # 6. Merge Findings
+            all_findings = heuristic_findings + llm_findings
+
+            requires_port_analysis = any(f.get("requires_port_analysis", False) for f in all_findings)
 
             return {
                 "status": "success",
-                "findings": findings,
+                "findings": all_findings,
                 "requires_port_analysis": requires_port_analysis,
                 "provider_info": {
                     "provider": llm_response["provider"],
