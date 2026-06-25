@@ -67,16 +67,17 @@ class LLMRouter:
             raise ValueError("ANTHROPIC_API_KEY is missing.")
         from anthropic import Anthropic
         client = Anthropic(api_key=self.claude_key)
-        
-        # Determine thinking budget based on stage
-        # Report agent uses medium thinking (4096), others use lower thinking (1024)
+
+        # budget_tokens must be less than max_tokens
         budget_tokens = 4096 if stage == "report" else 1024
-        
+        max_tokens = budget_tokens + 4096  # headroom for the actual response
+
         message = client.messages.create(
-            max_tokens=8192,
+            model="claude-sonnet-4-6",
+            max_tokens=max_tokens,
             thinking={
                 "type": "enabled",
-                "budget_tokens": budget_tokens
+                "budget_tokens": budget_tokens,
             },
             messages=[
                 {
@@ -84,6 +85,18 @@ class LLMRouter:
                     "content": prompt,
                 }
             ],
-            model="claude-sonnet-4-6",
         )
-        return {"result": message.content[0].text, "provider": "claude", "fallback_triggered": False}
+
+        # With thinking enabled, content blocks are: [thinking_block, ..., text_block]
+        # Find the text block explicitly rather than assuming index 0
+        text_block = next(
+            (block for block in message.content if block.type == "text"), None
+        )
+        if text_block is None:
+            raise ValueError("No text block found in Claude response.")
+
+        return {
+            "result": text_block.text,
+            "provider": "claude",
+            "fallback_triggered": False,
+        }

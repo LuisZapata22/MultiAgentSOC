@@ -80,7 +80,8 @@ Produce a formal JSON report object with the following structure:
     }}
   ],
   "recommended_next_steps": ["<step 1>", "<step 2>", "<step 3>"],
-  "analyst_notes": "<any caveats, limitations of this automated analysis, or context>"
+  "analyst_notes": "<any caveats, limitations of this automated analysis, or context>",
+  "markdown_body": "<The ENTIRE formal report formatted in pure Markdown. Must include the following headers exactly:\n# Problem analyzed\n# Agents used\n# Evidence processed\n# Summarized conversation between agents\n# Findings\n# Prioritized risks\n# Recommendations\n# Human validation\n# System limitations\nUse proper markdown tables, bullet points, and formatting to make this a beautiful, readable document.>"
 }}
 
 Return ONLY the JSON object, no markdown fencing.
