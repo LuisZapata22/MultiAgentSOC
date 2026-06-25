@@ -36,12 +36,20 @@ graph TD
     VA <--> VLS
     RA <--> RPS
     
+    subgraph Post-Report
+        CHAT[Chat Assistant]
+        CHAT <-->|Drill-down| EVS
+    end
+    
+    ORCH --> CHAT
+    
     LLM{LLM Router\nGemini/Claude}
     DA -.-> LLM
     PA -.-> LLM
     MA -.-> LLM
     VA -.-> LLM
     RA -.-> LLM
+    CHAT -.-> LLM
     
     DB[(Trace DB / Elicitations)]
     ORCH <--> DB
@@ -123,6 +131,12 @@ sequenceDiagram
 The system operates semi-autonomously. Whenever an agent encounters missing context, an ambiguous finding, or a critical decision point (e.g., asset criticality, expected external IPs, low-confidence anomalies), it pauses the pipeline via the `ElicitationManager`.
 - **5-Minute Timeout**: The analyst has 5 minutes to respond. If no response is received, the pipeline safely terminates to free up resources.
 - **Audit Trail**: Every human decision is recorded and appended to the final "Human validation" section of the report.
+
+### Post-Report Conversational Assistant
+Once the final report is generated, the UI unlocks a Conversational Assistant panel.
+- **Context-Aware**: The assistant has deep knowledge of the current report, all findings, validation results, and agent communication traces.
+- **Strict Scope**: It cannot access external data or past reports, ensuring strict data boundaries. It refuses to speculate.
+- **MCP Drill-down**: If an analyst asks for evidence (e.g., "What packets triggered Finding #2?"), the Chat Assistant queries the Evidence MCP Server in real-time to retrieve the raw NDJSON logs supporting the claim.
 
 ---
 

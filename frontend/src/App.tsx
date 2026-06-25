@@ -11,7 +11,11 @@ import {
   CheckCircle2,
   AlertCircle,
   Download,
-  Clock
+  Clock,
+  MessageCircle,
+  X,
+  Send,
+  Bot
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -53,6 +57,14 @@ export default function App() {
   const [elicitationResponses, setElicitationResponses] = useState<Record<string, any>>({});
   const [elicitationTimer, setElicitationTimer] = useState<number>(300);
 
+  // Chat Assistant State
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [chatMessages, setChatMessages] = useState<any[]>([]);
+  const [chatInput, setChatInput] = useState('');
+  const [isChatLoading, setIsChatLoading] = useState(false);
+  const [hasUnreadChat, setHasUnreadChat] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     let interval: number;
     if (pipelineState !== 'IDLE' && pipelineState !== 'COMPLETE' && pipelineState !== 'BLOCKED') {
@@ -79,6 +91,11 @@ export default function App() {
     // Scroll to bottom of traces
     traceEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [traces]);
+
+  useEffect(() => {
+    // Scroll to bottom of chat
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [chatMessages, isChatOpen]);
 
   const fetchState = async () => {
     try {
@@ -110,8 +127,21 @@ export default function App() {
       const res = await fetch('http://localhost:8000/api/report');
       const data = await res.json();
       setReport(data.report);
+      fetchChatHistory();
     } catch (err) {
       console.error("Failed to fetch report", err);
+    }
+  };
+
+  const fetchChatHistory = async () => {
+    try {
+      const res = await fetch('http://localhost:8000/api/chat/history');
+      const data = await res.json();
+      if (data.history && data.history.length > 0) {
+        setChatMessages(data.history);
+      }
+    } catch (err) {
+      console.error("Failed to fetch chat history", err);
     }
   };
 
@@ -154,6 +184,10 @@ export default function App() {
 
   const uploadFile = async (file: File) => {
     setIsUploading(true);
+    setChatMessages([]);
+    setHasUnreadChat(false);
+    setIsChatOpen(false);
+
     const formData = new FormData();
     formData.append('file', file);
 
@@ -202,6 +236,41 @@ export default function App() {
 
   const currentStageIndex = PIPELINE_STAGES.findIndex(s => s.id === pipelineState);
 
+  // Chat Actions
+  const toggleChat = () => {
+    setIsChatOpen(!isChatOpen);
+    if (!isChatOpen) setHasUnreadChat(false);
+  };
+
+  const handleSendChat = async () => {
+    if (!chatInput.trim() || isChatLoading) return;
+    
+    const userMsg = chatInput.trim();
+    setChatInput('');
+    setChatMessages(prev => [...prev, { role: 'user', content: userMsg }]);
+    setIsChatLoading(true);
+
+    try {
+      const res = await fetch('http://localhost:8000/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: userMsg })
+      });
+      const data = await res.json();
+      
+      setChatMessages(prev => [...prev, { role: 'assistant', content: data.response }]);
+      if (!isChatOpen) setHasUnreadChat(true);
+    } catch (err) {
+      setChatMessages(prev => [...prev, { role: 'assistant', content: "Error: Could not connect to assistant." }]);
+    } finally {
+      setIsChatLoading(false);
+    }
+  };
+
+  const handleChatKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') handleSendChat();
+  };
+
   // Chart data processing for findings
   const findingsData = report?.findings ? report.findings.map((f: any) => ({
     name: f.title.substring(0, 30) + '...',
@@ -218,7 +287,7 @@ export default function App() {
       filename:     'SOC_Agentic_Telemetry_Analysis_Report.pdf',
       image:        { type: 'jpeg' as const, quality: 0.98 },
       html2canvas:  { scale: 2, useCORS: true, backgroundColor: '#1e1e24' },
-      jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+      jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' as const }
     };
     
     html2pdf().set(opt).from(element).save();
@@ -522,7 +591,84 @@ export default function App() {
           )}
         </div>
       </div>
-      
+
+      {/* CHAT ASSISTANT (Only visible when COMPLETE) */}
+      {pipelineState === 'COMPLETE' && (
+        <>
+          <button className="chat-toggle-btn" onClick={toggleChat} title="Chat with Report Assistant">
+            <MessageCircle />
+            {hasUnreadChat && !isChatOpen && <div className="unread-dot"></div>}
+          </button>
+
+          {isChatOpen && (
+            <div className="chat-panel">
+              <div className="chat-header">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3>Report Assistant</h3>
+                    <span className="chat-header-badge">AI</span>
+                  </div>
+                  <span className="text-xs text-muted">Ask questions about this report</span>
+                </div>
+                <button className="chat-close-btn" onClick={toggleChat}>
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="chat-messages">
+                {chatMessages.length === 0 ? (
+                  <div className="chat-welcome">
+                    <div className="welcome-icon"><Bot className="w-6 h-6" /></div>
+                    <h4>I'm your SOC Assistant</h4>
+                    <p>I can help you analyze this report, explain findings, or pull specific evidence. What would you like to know?</p>
+                    
+                    <div className="chat-suggestions">
+                      <button className="chat-suggestion-btn" onClick={() => setChatInput("Summarize the most critical findings.")}>Summarize the most critical findings.</button>
+                      <button className="chat-suggestion-btn" onClick={() => setChatInput("What evidence supports finding #1?")}>What evidence supports finding #1?</button>
+                    </div>
+                  </div>
+                ) : (
+                  chatMessages.map((msg, idx) => (
+                    <div key={idx} className={`chat-bubble ${msg.role === 'user' ? 'chat-bubble-user' : 'chat-bubble-assistant'}`}>
+                      {msg.role === 'assistant' ? (
+                        <div className="prose prose-invert max-w-none">
+                          <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+                        </div>
+                      ) : (
+                        msg.content
+                      )}
+                    </div>
+                  ))
+                )}
+                {isChatLoading && (
+                  <div className="chat-thinking">
+                    <Bot className="w-4 h-4" />
+                    <div className="chat-thinking-dots">
+                      <span></span><span></span><span></span>
+                    </div>
+                  </div>
+                )}
+                <div ref={chatEndRef} />
+              </div>
+
+              <div className="chat-input-area">
+                <input 
+                  type="text" 
+                  placeholder="Ask a question..." 
+                  value={chatInput}
+                  onChange={e => setChatInput(e.target.value)}
+                  onKeyDown={handleChatKeyDown}
+                  disabled={isChatLoading}
+                />
+                <button className="chat-send-btn" onClick={handleSendChat} disabled={!chatInput.trim() || isChatLoading}>
+                  <Send className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
       {elicitation && (
         <div className="elicitation-overlay">
           <div className="elicitation-modal">

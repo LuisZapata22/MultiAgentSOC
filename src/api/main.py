@@ -12,6 +12,7 @@ import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 from src.orchestrator.state_machine import OrchestratorStateMachine
 from src.orchestrator.models import OrchestratorState, ElicitationResponse
+from src.orchestrator.agents.chat_agent import ChatAgent
 
 app = FastAPI(title="Agentic SOC Pipeline API")
 
@@ -30,6 +31,7 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 # We use a global variable to hold the orchestrator instance for the demo
 orchestrator_instance = None
+chat_agent_instance = None
 
 async def run_pipeline_task(file_path: str):
     """
@@ -80,6 +82,7 @@ async def upload_telemetry(background_tasks: BackgroundTasks, file: UploadFile =
     Uploads a Zeek NDJSON log and starts the agentic pipeline.
     """
     global orchestrator_instance
+    global chat_agent_instance
     
     # Cleanup old DB to start fresh for demo
     if os.path.exists(DB_PATH):
@@ -87,6 +90,9 @@ async def upload_telemetry(background_tasks: BackgroundTasks, file: UploadFile =
             os.remove(DB_PATH)
         except:
             pass
+    
+    # Reset chat agent on new pipeline run
+    chat_agent_instance = None
             
     orchestrator_instance = OrchestratorStateMachine(db_path=DB_PATH)
     
@@ -206,6 +212,63 @@ async def get_elicitation_history():
     
     history = orchestrator_instance.elicitation_mgr.get_history()
     return {"history": history}
+
+# --- Chat Assistant Endpoints ---
+
+class ChatMessageBody(BaseModel):
+    message: str
+
+
+@app.post("/api/chat")
+async def chat_with_report(body: ChatMessageBody):
+    """
+    Send a question to the post-report conversational assistant.
+    The assistant only has access to the current report context.
+    """
+    global orchestrator_instance, chat_agent_instance
+
+    if not orchestrator_instance:
+        raise HTTPException(status_code=404, detail="No pipeline run initialized.")
+
+    if orchestrator_instance.state != OrchestratorState.COMPLETE:
+        raise HTTPException(status_code=400, detail="Pipeline is not complete yet. Chat is only available after report generation.")
+
+    # Lazily initialize the chat agent on first call
+    if chat_agent_instance is None:
+        # Gather all context from the orchestrator
+        traces_list = []
+        try:
+            with sqlite3.connect(DB_PATH) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM traces ORDER BY timestamp ASC")
+                traces_list = [dict(row) for row in cursor.fetchall()]
+        except Exception:
+            pass
+
+        elicitation_history = orchestrator_instance.elicitation_mgr.get_history()
+
+        chat_agent_instance = ChatAgent(
+            report=orchestrator_instance.final_report,
+            traces=traces_list,
+            findings=orchestrator_instance.current_findings,
+            validation_result=orchestrator_instance.validation_result,
+            elicitation_history=elicitation_history,
+        )
+
+    result = await chat_agent_instance.ask(body.message)
+    return result
+
+
+@app.get("/api/chat/history")
+async def get_chat_history():
+    """
+    Returns the conversation history for the current report session.
+    """
+    global chat_agent_instance
+    if not chat_agent_instance:
+        return {"history": []}
+    return {"history": chat_agent_instance.get_history()}
 
 
 if __name__ == "__main__":
