@@ -416,3 +416,237 @@ h1 {
 .text-2xl { font-size: 1.5rem; }
 .font-bold { font-weight: 700; }
 .animate-fade-in { animation: fadeIn 0.3s ease-out; }
+
+/* --- Elicitation Modal --- */
+.elicitation-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 0.3s ease-out;
+}
+
+.elicitation-modal {
+  background: hsl(var(--bg-secondary));
+  border: 1px solid var(--glass-border);
+  border-radius: 16px;
+  padding: 2rem;
+  max-width: 700px;
+  width: 90%;
+  max-height: 85vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5), 0 0 40px hsla(var(--accent-cyan), 0.1);
+  animation: slideUp 0.3s ease-out;
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(30px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.elicitation-header {
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--glass-border);
+}
+
+.elicitation-header h2 {
+  font-size: 1.4rem;
+  margin-bottom: 0.5rem;
+  background: linear-gradient(135deg, hsl(var(--accent-cyan)), hsl(var(--accent-blue)));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.elicitation-header p {
+  color: hsl(var(--text-muted));
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.elicitation-agent-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.75rem;
+  background: hsla(var(--accent-cyan), 0.15);
+  color: hsl(var(--accent-cyan));
+  border: 1px solid hsla(var(--accent-cyan), 0.3);
+}
+
+.elicitation-context {
+  background: hsla(var(--bg-tertiary), 0.5);
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1.5rem;
+  font-size: 0.85rem;
+}
+
+.elicitation-context summary {
+  cursor: pointer;
+  color: hsl(var(--text-muted));
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+}
+
+.elicitation-context pre {
+  margin-top: 0.5rem;
+  white-space: pre-wrap;
+  font-size: 0.8rem;
+  color: hsl(var(--text-main));
+  font-family: 'Fira Code', monospace;
+}
+
+.elicitation-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.elicitation-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.elicitation-field label {
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: hsl(var(--text-main));
+  line-height: 1.4;
+}
+
+.elicitation-field label .required-star {
+  color: hsl(var(--status-critical));
+  margin-left: 0.2rem;
+}
+
+.elicitation-field input[type="text"],
+.elicitation-field textarea,
+.elicitation-field select {
+  background: hsl(var(--bg-primary));
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  color: hsl(var(--text-main));
+  font-family: inherit;
+  font-size: 0.9rem;
+  transition: border-color 0.2s ease;
+  outline: none;
+  width: 100%;
+}
+
+.elicitation-field input[type="text"]:focus,
+.elicitation-field textarea:focus,
+.elicitation-field select:focus {
+  border-color: hsl(var(--accent-cyan));
+  box-shadow: 0 0 0 2px hsla(var(--accent-cyan), 0.2);
+}
+
+.elicitation-field textarea {
+  min-height: 80px;
+  resize: vertical;
+}
+
+.elicitation-field select {
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20width%3D%2212%22%20height%3D%2212%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cpath%20d%3D%22M3%205l3%203%203-3%22%20stroke%3D%22%23999%22%20fill%3D%22none%22%2F%3E%3C%2Fsvg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
+  padding-right: 2.5rem;
+}
+
+.elicitation-radio-group,
+.elicitation-checkbox-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.elicitation-radio-option,
+.elicitation-checkbox-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  padding: 0.6rem 0.8rem;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  border: 1px solid transparent;
+}
+
+.elicitation-radio-option:hover,
+.elicitation-checkbox-option:hover {
+  background: hsla(var(--bg-tertiary), 0.5);
+}
+
+.elicitation-radio-option input,
+.elicitation-checkbox-option input {
+  margin-top: 0.15rem;
+  accent-color: hsl(var(--accent-cyan));
+  width: 16px;
+  height: 16px;
+}
+
+.elicitation-radio-option span,
+.elicitation-checkbox-option span {
+  font-size: 0.9rem;
+  color: hsl(var(--text-main));
+}
+
+.elicitation-multi-select {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.elicitation-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--glass-border);
+}
+
+.elicitation-timer {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  color: hsl(var(--status-medium));
+  margin-right: auto;
+}
+
+.elicitation-timer.warning {
+  color: hsl(var(--status-critical));
+  animation: pulse-glow 1s infinite;
+}
+
+.pipeline-node.awaiting {
+  border-color: hsl(var(--status-medium));
+  background: hsla(var(--status-medium), 0.1);
+}
+
+.pipeline-node.awaiting .node-icon {
+  color: hsl(var(--status-medium));
+  animation: pulse-glow 2s infinite;
+  border-radius: 50%;
+}

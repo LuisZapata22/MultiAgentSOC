@@ -8,3 +8,4 @@ env/
 trace.db
 *.db
 .pytest_cache/
+reports/

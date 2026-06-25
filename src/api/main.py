@@ -5,12 +5,13 @@ import asyncio
 import os
 import shutil
 import sqlite3
+import json
 
 # Import our Orchestrator
 import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 from src.orchestrator.state_machine import OrchestratorStateMachine
-from src.orchestrator.models import OrchestratorState
+from src.orchestrator.models import OrchestratorState, ElicitationResponse
 
 app = FastAPI(title="Agentic SOC Pipeline API")
 
@@ -33,6 +34,8 @@ orchestrator_instance = None
 async def run_pipeline_task(file_path: str):
     """
     Background task to run the complete pipeline end-to-end.
+    The pipeline will automatically pause at elicitation points
+    (via asyncio.Event) and resume when the analyst responds.
     """
     global orchestrator_instance
     try:
@@ -41,6 +44,11 @@ async def run_pipeline_task(file_path: str):
         
         if orchestrator_instance.state == OrchestratorState.DETECTING:
             await orchestrator_instance.run_detection()
+
+        # After elicitation, state may be BLOCKED (timeout)
+        if orchestrator_instance.state == OrchestratorState.BLOCKED:
+            print("[!] Pipeline killed due to elicitation timeout.")
+            return
             
         if orchestrator_instance.state == OrchestratorState.PORT_ANALYSIS:
             await orchestrator_instance.run_port_analysis()
@@ -50,9 +58,17 @@ async def run_pipeline_task(file_path: str):
             
         if orchestrator_instance.state == OrchestratorState.VALIDATING:
             await orchestrator_instance.run_validation()
+
+        if orchestrator_instance.state == OrchestratorState.BLOCKED:
+            print("[!] Pipeline killed due to elicitation timeout.")
+            return
             
         if orchestrator_instance.state == OrchestratorState.REPORTING:
             await orchestrator_instance.run_reporting()
+
+        if orchestrator_instance.state == OrchestratorState.BLOCKED:
+            print("[!] Pipeline killed due to elicitation timeout.")
+            return
             
         print("[*] Pipeline completely finished!")
     except Exception as e:
@@ -85,11 +101,21 @@ async def upload_telemetry(background_tasks: BackgroundTasks, file: UploadFile =
 async def get_status():
     """
     Returns the current state of the Orchestrator.
+    Includes elicitation request ID when in AWAITING_INPUT state.
     """
     global orchestrator_instance
     if not orchestrator_instance:
         return {"state": "IDLE"}
-    return {"state": orchestrator_instance.state.value}
+    
+    response = {"state": orchestrator_instance.state.value}
+    
+    # Include elicitation info when pipeline is paused
+    if orchestrator_instance.state == OrchestratorState.AWAITING_INPUT:
+        pending = orchestrator_instance.elicitation_mgr.get_pending()
+        if pending:
+            response["elicitation_id"] = pending.id
+    
+    return response
 
 @app.get("/api/traces")
 async def get_traces():
@@ -122,6 +148,65 @@ async def get_report():
         raise HTTPException(status_code=400, detail="Pipeline is not complete yet.")
         
     return {"report": orchestrator_instance.final_report}
+
+
+# --- Elicitation Endpoints ---
+
+@app.get("/api/elicitation/pending")
+async def get_pending_elicitation():
+    """
+    Returns the current pending elicitation request if the pipeline is paused.
+    """
+    global orchestrator_instance
+    if not orchestrator_instance:
+        return {"pending": None}
+    
+    pending = orchestrator_instance.elicitation_mgr.get_pending()
+    if not pending:
+        return {"pending": None}
+    
+    return {"pending": pending.model_dump()}
+
+
+class ElicitationResponseBody(BaseModel):
+    request_id: str
+    responses: dict
+
+
+@app.post("/api/elicitation/respond")
+async def respond_to_elicitation(body: ElicitationResponseBody):
+    """
+    Submits the analyst's response to a pending elicitation request.
+    This unblocks the pipeline and allows it to resume.
+    """
+    global orchestrator_instance
+    if not orchestrator_instance:
+        raise HTTPException(status_code=404, detail="No pipeline run initialized.")
+    
+    response = ElicitationResponse(
+        request_id=body.request_id,
+        responses=body.responses
+    )
+    
+    success = orchestrator_instance.elicitation_mgr.resolve(response)
+    if not success:
+        raise HTTPException(status_code=400, detail="No matching pending elicitation request found.")
+    
+    return {"status": "accepted", "message": "Response received. Pipeline resuming."}
+
+
+@app.get("/api/elicitation/history")
+async def get_elicitation_history():
+    """
+    Returns the full audit trail of all elicitation interactions.
+    """
+    global orchestrator_instance
+    if not orchestrator_instance:
+        return {"history": []}
+    
+    history = orchestrator_instance.elicitation_mgr.get_history()
+    return {"history": history}
+
 
 if __name__ == "__main__":
     import uvicorn

@@ -10,7 +10,8 @@ import {
   AlertTriangle,
   CheckCircle2,
   AlertCircle,
-  Download
+  Download,
+  Clock
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -35,6 +36,7 @@ const PIPELINE_STAGES = [
   { id: 'MITRE_MAPPING', label: 'MITRE Mapping', icon: Map },
   { id: 'VALIDATING', label: 'Validation Layer', icon: ShieldCheck },
   { id: 'REPORTING', label: 'Final Reporting', icon: FileText },
+  { id: 'AWAITING_INPUT', label: 'Awaiting Analyst', icon: Clock },
   { id: 'COMPLETE', label: 'Pipeline Complete', icon: CheckCircle2 },
 ];
 
@@ -47,13 +49,31 @@ export default function App() {
   const [isDragging, setIsDragging] = useState(false);
   const traceEndRef = useRef<HTMLDivElement>(null);
 
+  const [elicitation, setElicitation] = useState<any>(null);
+  const [elicitationResponses, setElicitationResponses] = useState<Record<string, any>>({});
+  const [elicitationTimer, setElicitationTimer] = useState<number>(300);
+
   useEffect(() => {
     let interval: number;
     if (pipelineState !== 'IDLE' && pipelineState !== 'COMPLETE' && pipelineState !== 'BLOCKED') {
       interval = window.setInterval(fetchState, 1000);
     }
     return () => clearInterval(interval);
-  }, [pipelineState]);
+  }, [pipelineState, elicitation]);
+
+  useEffect(() => {
+    if (!elicitation) return;
+    const timer = window.setInterval(() => {
+      setElicitationTimer((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [elicitation]);
 
   useEffect(() => {
     // Scroll to bottom of traces
@@ -76,6 +96,10 @@ export default function App() {
           fetchReport();
         }
       }
+
+      if (statusData.state === 'AWAITING_INPUT' && !elicitation) {
+        fetchElicitation();
+      }
     } catch (err) {
       console.error("API Error", err);
     }
@@ -88,6 +112,43 @@ export default function App() {
       setReport(data.report);
     } catch (err) {
       console.error("Failed to fetch report", err);
+    }
+  };
+
+  const fetchElicitation = async () => {
+    try {
+      const res = await fetch('http://localhost:8000/api/elicitation/pending');
+      const data = await res.json();
+      if (data.pending) {
+        setElicitation(data.pending);
+        setElicitationTimer(300);
+        const defaults: Record<string, any> = {};
+        data.pending.fields.forEach((f: any) => {
+          if (f.default) defaults[f.name] = f.default;
+          if (f.field_type === 'checkbox') defaults[f.name] = false;
+        });
+        setElicitationResponses(defaults);
+      }
+    } catch (err) {
+      console.error('Failed to fetch elicitation', err);
+    }
+  };
+
+  const handleElicitationSubmit = async () => {
+    if (!elicitation) return;
+    try {
+      await fetch('http://localhost:8000/api/elicitation/respond', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          request_id: elicitation.id,
+          responses: elicitationResponses
+        })
+      });
+      setElicitation(null);
+      setElicitationResponses({});
+    } catch (err) {
+      console.error('Failed to submit elicitation', err);
     }
   };
 
@@ -155,12 +216,96 @@ export default function App() {
     const opt = {
       margin:       15,
       filename:     'SOC_Agentic_Telemetry_Analysis_Report.pdf',
-      image:        { type: 'jpeg', quality: 0.98 },
+      image:        { type: 'jpeg' as const, quality: 0.98 },
       html2canvas:  { scale: 2, useCORS: true, backgroundColor: '#1e1e24' },
       jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
     };
     
     html2pdf().set(opt).from(element).save();
+  };
+
+  const renderElicitationField = (field: any) => {
+    const val = elicitationResponses[field.name];
+    switch (field.field_type) {
+      case 'text':
+        return (
+          <input
+            type="text"
+            value={val || ''}
+            onChange={(e) => setElicitationResponses(prev => ({...prev, [field.name]: e.target.value}))}
+          />
+        );
+      case 'textarea':
+        return (
+          <textarea
+            value={val || ''}
+            onChange={(e) => setElicitationResponses(prev => ({...prev, [field.name]: e.target.value}))}
+          />
+        );
+      case 'select':
+        return (
+          <select
+            value={val || ''}
+            onChange={(e) => setElicitationResponses(prev => ({...prev, [field.name]: e.target.value}))}
+          >
+            <option value="">Select...</option>
+            {field.options?.map((opt: string) => (
+              <option key={opt} value={opt}>{opt}</option>
+            ))}
+          </select>
+        );
+      case 'radio':
+        return (
+          <div className="elicitation-radio-group">
+            {field.options?.map((opt: string) => (
+              <label key={opt} className="elicitation-radio-option">
+                <input
+                  type="radio"
+                  name={field.name}
+                  value={opt}
+                  checked={val === opt}
+                  onChange={(e) => setElicitationResponses(prev => ({...prev, [field.name]: e.target.value}))}
+                />
+                <span>{opt}</span>
+              </label>
+            ))}
+          </div>
+        );
+      case 'checkbox':
+        return (
+          <label className="elicitation-checkbox-option">
+            <input
+              type="checkbox"
+              checked={!!val}
+              onChange={(e) => setElicitationResponses(prev => ({...prev, [field.name]: e.target.checked}))}
+            />
+            <span>{field.label}</span>
+          </label>
+        );
+      case 'multi-select':
+        return (
+          <div className="elicitation-multi-select">
+            {field.options?.map((opt: string) => (
+              <label key={opt} className="elicitation-checkbox-option">
+                <input
+                  type="checkbox"
+                  checked={(val || []).includes(opt)}
+                  onChange={(e) => {
+                    const current = val || [];
+                    const updated = e.target.checked
+                      ? [...current, opt]
+                      : current.filter((v: string) => v !== opt);
+                    setElicitationResponses(prev => ({...prev, [field.name]: updated}));
+                  }}
+                />
+                <span>{opt}</span>
+              </label>
+            ))}
+          </div>
+        );
+      default:
+        return <input type="text" value={val || ''} onChange={(e) => setElicitationResponses(prev => ({...prev, [field.name]: e.target.value}))} />;
+    }
   };
 
   return (
@@ -203,7 +348,7 @@ export default function App() {
               return (
                 <div 
                   key={stage.id} 
-                  className={`pipeline-node ${isActive ? 'active' : ''} ${isCompleted ? 'completed' : ''}`}
+                  className={`pipeline-node ${isActive ? 'active' : ''} ${isCompleted ? 'completed' : ''} ${pipelineState === 'AWAITING_INPUT' && stage.id === 'AWAITING_INPUT' ? 'awaiting' : ''}`}
                 >
                   {idx < PIPELINE_STAGES.length - 1 && <div className="node-connector" />}
                   <Icon className="node-icon w-5 h-5" />
@@ -323,7 +468,7 @@ export default function App() {
                           <YAxis dataKey="name" type="category" width={30} stroke="var(--text-muted)" fontSize={12} />
                           <Tooltip
                             contentStyle={{ background: '#111827', border: '1px solid #374151', borderRadius: '8px' }}
-                            formatter={(val: number) => [val === 4 ? 'Critical' : val === 3 ? 'High' : val === 2 ? 'Medium' : 'Low', 'Severity']}
+                            formatter={(val: any) => [val === 4 ? 'Critical' : val === 3 ? 'High' : val === 2 ? 'Medium' : 'Low', 'Severity']}
                           />
                           <Bar dataKey="severityLevel" radius={[0, 4, 4, 0]} barSize={20}>
                             {findingsData.map((entry: any, index: number) => (
@@ -377,6 +522,49 @@ export default function App() {
           )}
         </div>
       </div>
+      
+      {elicitation && (
+        <div className="elicitation-overlay">
+          <div className="elicitation-modal">
+            <div className="elicitation-header">
+              <div className="elicitation-agent-badge">
+                {elicitation.agent} Agent
+              </div>
+              <h2>{elicitation.title}</h2>
+              <p>{elicitation.description}</p>
+            </div>
+
+            {Object.keys(elicitation.context || {}).length > 0 && (
+              <details className="elicitation-context" open>
+                <summary>Evidence Context</summary>
+                <pre>{JSON.stringify(elicitation.context, null, 2)}</pre>
+              </details>
+            )}
+
+            <div className="elicitation-fields">
+              {elicitation.fields?.map((field: any) => (
+                <div key={field.name} className="elicitation-field">
+                  <label>
+                    {field.field_type !== 'checkbox' && field.label}
+                    {field.required && <span className="required-star">*</span>}
+                  </label>
+                  {renderElicitationField(field)}
+                </div>
+              ))}
+            </div>
+
+            <div className="elicitation-actions">
+              <div className={`elicitation-timer ${elicitationTimer < 60 ? 'warning' : ''}`}>
+                <Clock className="w-4 h-4" />
+                {Math.floor(elicitationTimer / 60)}:{String(elicitationTimer % 60).padStart(2, '0')} remaining
+              </div>
+              <button className="btn btn-primary" onClick={handleElicitationSubmit}>
+                Submit Response
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
     
   );
