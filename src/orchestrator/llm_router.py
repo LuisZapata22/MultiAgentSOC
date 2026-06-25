@@ -9,6 +9,10 @@ class LLMRouter:
         self.groq_key = os.getenv("GROQ_API_KEY")
         self.claude_key = os.getenv("ANTHROPIC_API_KEY")
         self.environment = os.getenv("ENVIRONMENT", "dev").lower()
+        
+        self.gemini_model = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
+        self.groq_model = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
+        self.claude_model = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6")
 
     def call(self, stage: str, prompt: str, **kwargs) -> Dict[str, Any]:
         """
@@ -54,7 +58,7 @@ class LLMRouter:
         from google import genai
         client = genai.Client(api_key=self.gemini_key)
         response = client.models.generate_content(
-            model='gemini-3.5-flash',
+            model=self.gemini_model,
             contents=prompt,
         )
         return response.text
@@ -71,7 +75,7 @@ class LLMRouter:
                     "content": prompt,
                 }
             ],
-            model="openai/gpt-oss-120b",
+            model=self.groq_model,
         )
         return chat_completion.choices[0].message.content
 
@@ -86,7 +90,7 @@ class LLMRouter:
         max_tokens = budget_tokens + 4096  # headroom for the actual response
 
         message = client.messages.create(
-            model="claude-sonnet-4-6",
+            model=self.claude_model,
             max_tokens=max_tokens,
             thinking={
                 "type": "enabled",
