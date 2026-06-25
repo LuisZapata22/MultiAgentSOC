@@ -22,6 +22,7 @@ import {
   Cell
 } from 'recharts';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 // @ts-ignore
 import html2pdf from 'html2pdf.js';
 import './index.css';
@@ -43,6 +44,7 @@ export default function App() {
   const [report, setReport] = useState<any>(null);
   const [reportView, setReportView] = useState<'ui' | 'markdown'>('ui');
   const [isUploading, setIsUploading] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
   const traceEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -89,10 +91,7 @@ export default function App() {
     }
   };
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
+  const uploadFile = async (file: File) => {
     setIsUploading(true);
     const formData = new FormData();
     formData.append('file', file);
@@ -110,6 +109,33 @@ export default function App() {
       alert("Upload failed. Make sure the backend is running.");
     } finally {
       setIsUploading(false);
+    }
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) uploadFile(file);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    if (!isUploading && (pipelineState === 'IDLE' || pipelineState === 'COMPLETE')) {
+      setIsDragging(true);
+    }
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    if (isUploading || (pipelineState !== 'IDLE' && pipelineState !== 'COMPLETE')) return;
+    
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      uploadFile(e.dataTransfer.files[0]);
     }
   };
 
@@ -145,7 +171,12 @@ export default function App() {
         
         <div className="glass-panel">
           <h2 className="mb-4 text-lg">Input Telemetry</h2>
-          <label className={`upload-zone ${isUploading ? 'opacity-50' : ''}`}>
+          <label 
+            className={`upload-zone ${isUploading ? 'opacity-50' : ''} ${isDragging ? 'drag-active' : ''}`}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+          >
             <UploadCloud className="upload-icon" />
             <div>
               <p className="font-medium">Upload Zeek NDJSON</p>
@@ -225,25 +256,25 @@ export default function App() {
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-lg">Analyst Report</h2>
             {report && report.markdown_body && (
-              <div className="flex gap-2">
+              <div className="btn-container">
                 <button 
-                  className={`text-xs px-3 py-1 rounded-full ${reportView === 'ui' ? 'bg-indigo-600 text-white' : 'bg-gray-800 text-gray-400'}`}
+                  className={`btn ${reportView === 'ui' ? 'btn-primary' : 'btn-secondary'}`}
                   onClick={() => setReportView('ui')}
                 >
                   Dashboard View
                 </button>
                 <button 
-                  className={`text-xs px-3 py-1 rounded-full ${reportView === 'markdown' ? 'bg-indigo-600 text-white' : 'bg-gray-800 text-gray-400'}`}
+                  className={`btn ${reportView === 'markdown' ? 'btn-primary' : 'btn-secondary'}`}
                   onClick={() => setReportView('markdown')}
                 >
                   Formal Report
                 </button>
                 {reportView === 'markdown' && (
                   <button 
-                    className="flex items-center gap-1 text-xs px-3 py-1 bg-green-600/80 hover:bg-green-600 text-white rounded-full transition-colors ml-2"
+                    className="btn btn-success"
                     onClick={handleDownloadPdf}
                   >
-                    <Download className="w-3 h-3" />
+                    <Download className="w-4 h-4" />
                     Download PDF
                   </button>
                 )}
@@ -258,35 +289,29 @@ export default function App() {
           ) : (
             <div className="flex-1 overflow-y-auto pr-2 pb-4 animate-fade-in">
               {reportView === 'markdown' && report.markdown_body ? (
-                <div id="markdown-report-content" className="prose prose-invert max-w-none p-6 bg-gray-900/50 rounded-lg border border-gray-800">
-                  <ReactMarkdown>{report.markdown_body}</ReactMarkdown>
+                <div id="markdown-report-content" className="markdown-container prose">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{report.markdown_body}</ReactMarkdown>
                 </div>
               ) : (
-                <div className="flex flex-col gap-6">
-                  <div className="flex gap-4">
-                    <div
-                      className={`p-4 rounded-lg flex-1 border ${
-                        report.risk_level === 'CRITICAL'
-                          ? 'border-red-500 bg-red-900/20'
-                          : report.risk_level === 'HIGH'
-                            ? 'border-orange-500 bg-orange-900/20'
-                            : 'border-yellow-500 bg-yellow-900/20'
-                      }`}
-                    >
-                      <div className="text-xs uppercase tracking-wider opacity-70 mb-1">Overall Risk Level</div>
-                      <div className="text-2xl font-bold flex items-center gap-2">
+                <div className="flex-col gap-6">
+                  <div className="report-cards">
+                    <div className={`report-card ${report.risk_level.toLowerCase()}`}>
+                      <div className="report-card-label">Overall Risk Level</div>
+                      <div className="report-card-value">
                         {report.risk_level === 'CRITICAL' && <AlertTriangle className="text-red-500" />}
                         {report.risk_level}
                       </div>
                     </div>
-                    <div className="p-4 rounded-lg flex-1 border border-gray-700 bg-gray-900/40">
-                      <div className="text-xs uppercase tracking-wider opacity-70 mb-1">Generated At</div>
-                      <div className="text-lg font-medium">{new Date(report.generated_at).toLocaleString()}</div>
+                    <div className="report-card">
+                      <div className="report-card-label">Generated At</div>
+                      <div className="report-card-value" style={{ fontSize: '1.2rem' }}>
+                        {new Date(report.generated_at).toLocaleString()}
+                      </div>
                     </div>
                   </div>
 
-                  <div>
-                    <h3 className="text-sm uppercase tracking-wider text-muted mb-2">Executive Summary</h3>
+                  <div className="report-section">
+                    <h3 className="report-section-title">Executive Summary</h3>
                     <p className="leading-relaxed">{report.executive_summary}</p>
                   </div>
 
@@ -319,18 +344,19 @@ export default function App() {
                     </div>
                   )}
 
-                  <div className="flex flex-col gap-4">
-                    <h3 className="text-sm uppercase tracking-wider text-muted">Detailed Findings ({report.findings?.length || 0})</h3>
-                    {report.findings?.map((f: any, idx: number) => (
-                      <div key={idx} className="p-4 border border-gray-800 rounded-lg bg-gray-900/20">
-                        <div className="flex justify-between items-start mb-2">
-                          <div className="font-medium text-lg flex items-center gap-2">
-                            {f.status === 'CRITICAL' && <AlertCircle className="w-4 h-4 text-red-500" />}
-                            {f.title}
+                  <div className="report-section">
+                    <h3 className="report-section-title">Detailed Findings ({report.findings?.length || 0})</h3>
+                    <div className="flex-col gap-4">
+                      {report.findings?.map((f: any, idx: number) => (
+                        <div key={idx} className="p-4 border border-gray-800 rounded-lg bg-gray-900/20" style={{ marginBottom: '1rem' }}>
+                          <div className="flex justify-between items-start mb-2">
+                            <div className="font-medium text-lg flex items-center gap-2">
+                              {f.status === 'CRITICAL' && <AlertCircle className="w-4 h-4 text-red-500" />}
+                              {f.title}
+                            </div>
+                            <span className={`badge badge-${f.severity?.toLowerCase()}`}>{f.severity}</span>
                           </div>
-                          <span className={`badge badge-${f.severity?.toLowerCase()}`}>{f.severity}</span>
-                        </div>
-                        <p className="text-muted text-sm mb-3">{f.description}</p>
+                          <p className="text-muted text-sm mb-3">{f.description}</p>
 
                         <div className="grid grid-cols-2 gap-2 text-sm bg-black/20 p-3 rounded">
                           <div><span className="opacity-50">MITRE ID:</span> {f.mitre_technique_id || 'N/A'}</div>
@@ -345,6 +371,7 @@ export default function App() {
                     ))}
                   </div>
                 </div>
+              </div>
               )}
             </div>
           )}
