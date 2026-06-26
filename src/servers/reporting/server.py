@@ -49,6 +49,7 @@ def report_generation_template(
     prompt = f"""You are a senior cybersecurity analyst producing a formal Incident Assessment Report.
 Your report will be reviewed by a human analyst and must be precise, professional, and actionable.
 This is a DEFENSIVE SECURITY REPORT ONLY — do not suggest or describe any offensive actions.
+You must synthesize the technical findings into a cohesive narrative, avoiding simple recitation of logs. Explain the potential business impact of the identified threats.
 
 Report Timestamp: {ts}
 
@@ -62,6 +63,7 @@ Report Timestamp: {ts}
 {llm_summary_json}
 
 Produce a formal JSON report object with the following structure:
+```json
 {{
   "report_id": "<generate a short UUID>",
   "generated_at": "{ts}",
@@ -80,11 +82,25 @@ Produce a formal JSON report object with the following structure:
     }}
   ],
   "recommended_next_steps": ["<step 1>", "<step 2>", "<step 3>"],
-  "analyst_notes": "<any caveats, limitations of this automated analysis, or context>",
-  "markdown_body": "<The ENTIRE formal report formatted in pure Markdown. Must include the following headers exactly:\n# Problem analyzed\n# Agents used\n# Evidence processed\n# Summarized conversation between agents\n# Findings\n# Prioritized risks\n# Recommendations\n# Human validation\n# System limitations\nUse proper markdown tables, bullet points, and formatting to make this a beautiful, readable document.>"
+  "analyst_notes": "<any caveats, limitations of this automated analysis, or context>"
 }}
+```
 
-Return ONLY the JSON object, no markdown fencing.
+After the JSON block, you MUST output the ENTIRE formal report formatted in pure Markdown. 
+Precede the markdown report with this exact delimiter: === FORMAL REPORT ===
+
+The Markdown report MUST include the following headers exactly:
+# Problem analyzed
+# Agents used
+# Evidence processed
+# Summarized conversation between agents
+# Findings
+# Prioritized risks
+# Recommendations
+# Human validation
+# System limitations
+
+Use proper markdown tables, bullet points, and formatting to make this a beautiful, readable document. Under the Findings section, include detailed explanations of each threat and reference the specific IP addresses and ports involved. Under Prioritized risks, explain the potential business impact of each critical threat.
 """
     return prompt
 

@@ -109,8 +109,10 @@ The heuristic engine has already run and produced the following findings:
 
 Look for:
 1. Unusual volume of connections from a single source to many destinations (possible scanning).
-2. Many failed connections.
-3. Unusual ports being used.
+2. Many failed connections or dropped packets.
+3. Unusual ports being used (e.g., standard services on high ports, or known malware ports like 4444).
+4. Correlate multiple events: if an IP scans ports and then transfers a large amount of data, flag it as a compound attack.
+5. Filter out obvious benign traffic (e.g. standard DNS to 8.8.8.8) to reduce false positives.
 
 Output your findings as a strict JSON array of objects, where each object has:
 - "finding": A brief string describing the anomaly.

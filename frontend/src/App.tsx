@@ -469,7 +469,7 @@ export default function App() {
         <div className="glass-panel flex flex-col" style={{ flex: '1', overflowY: 'hidden' }}>
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-lg">Analyst Report</h2>
-            {report && report.markdown_body && (
+            {report && (
               <div className="btn-container">
                 <button 
                   className={`btn ${reportView === 'ui' ? 'btn-primary' : 'btn-secondary'}`}
@@ -502,9 +502,20 @@ export default function App() {
             </div>
           ) : (
             <div className="flex-1 overflow-y-auto pr-2 pb-4 animate-fade-in">
-              {reportView === 'markdown' && report.markdown_body ? (
+              {reportView === 'markdown' ? (
                 <div id="markdown-report-content" className="markdown-container prose">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{report.markdown_body}</ReactMarkdown>
+                  {report.markdown_body ? (
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{report.markdown_body}</ReactMarkdown>
+                  ) : (
+                    <div>
+                      <h1>Incident Report (Fallback)</h1>
+                      <p>The AI model did not return a formal markdown report body. Please see the Dashboard View for the structured findings.</p>
+                      <h2>Executive Summary</h2>
+                      <p>{report.executive_summary}</p>
+                      <h2>Prioritized Risks</h2>
+                      <p>{report.risk_level}</p>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="flex-col gap-6">

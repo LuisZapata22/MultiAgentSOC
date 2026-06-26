@@ -68,7 +68,8 @@ Available Network-Relevant MITRE Taxonomy (ID -> Name/Tactic):
 {json.dumps(filtered_tax, indent=2)}
 
 For each finding, identify the single most relevant MITRE Technique ID. 
-If no technique applies, return an empty string for the technique_id.
+If no technique applies, return an empty string for the technique_id. Do NOT force a mapping if the evidence is weak or circumstantial.
+Ensure the "justification" field explicitly references the telemetry event type or data points (e.g., ports, byte sizes) that led to this mapping.
 
 Output your findings as a strict JSON array of objects, where each object has:
 - "original_finding": The original finding string.

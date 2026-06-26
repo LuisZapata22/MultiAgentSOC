@@ -166,7 +166,21 @@ class OrchestratorStateMachine:
             result = await self.mitre_agent.run_mitre_mapping(self.current_findings)
             next_state = OrchestratorState.VALIDATING
             mapped_findings = result.get("mitre_mappings", [])
-            self.current_findings.append({"mitre_mappings": mapped_findings})
+            
+            # Merge mitre mappings back into findings
+            for mapping in mapped_findings:
+                orig_text = mapping.get("original_finding", "")
+                tech_id = mapping.get("mitre_technique_id", "")
+                tactic = mapping.get("mitre_tactic", "")
+                
+                # Find matching finding
+                for f in self.current_findings:
+                    f_text = f.get("finding", f.get("title", ""))
+                    if f_text and orig_text and (f_text in orig_text or orig_text in f_text):
+                        f["mitre_technique_id"] = tech_id
+                        f["mitre_tactic"] = tactic
+                        break
+                        
             provider_info = result.pop("provider_info", {})
             trace = TraceRecord(sender="MitreAgent", receiver="ValidationAgent", task="map_to_mitre", evidence_used=["all_previous_findings"], result={"status": result["status"], "mapped_count": len(mapped_findings), "api_error": provider_info.get("error")}, confidence=0.9, next_action=next_state, llm_provider=provider_info.get("provider"), fallback_triggered=provider_info.get("fallback_triggered", False))
             self.logger.log(trace)

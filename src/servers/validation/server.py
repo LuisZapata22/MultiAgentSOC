@@ -40,18 +40,11 @@ def validate_findings(findings_json: str) -> str:
 
     validated = []
     for f in findings:
-        # Handle both direct findings and MITRE mapping entries
-        if "mitre_mappings" in f:
-            for mapping in f["mitre_mappings"]:
-                tech_id = mapping.get("mitre_technique_id", "")
-                result = _validate_single(mapping.get("original_finding", ""), tech_id, "medium")
-                validated.append(result)
-        else:
-            finding_text = f.get("finding", "")
-            severity = f.get("severity", "low")
-            tech_id = f.get("mitre_technique_id", "")
-            result = _validate_single(finding_text, tech_id, severity)
-            validated.append(result)
+        finding_text = f.get("finding", f.get("title", "Unknown Finding"))
+        severity = f.get("severity", "low")
+        tech_id = f.get("mitre_technique_id", "")
+        result = _validate_single(finding_text, tech_id, severity)
+        validated.append(result)
 
     summary = {
         "total": len(validated),
@@ -98,12 +91,12 @@ Validation Report:
 {validated_json}
 
 Your task:
-1. Summarize the overall risk posture in 2-3 sentences.
-2. List the top 3 most critical findings, explaining WHY they are risky in plain language.
+1. Summarize the overall risk posture in 2-3 sentences, tailored for a CISO audience. Explain WHY the conclusions were reached based on the deterministic validation.
+2. List the top 3 most critical findings, explaining their technical risk and potential business impact in plain language. Mention specific IPs and Tactics if present.
 3. Recommend a clear next action for the analyst (e.g., "Immediately isolate host 192.168.1.5", 
    "Escalate to Tier 2", "Continue monitoring — no immediate action required").
 
-Keep the tone professional and concise. Your output will go directly into the final analyst report.
+Keep the tone professional, objective, and concise. Your output will go directly into the final analyst report.
 Return a JSON object with keys: "risk_summary", "top_findings", "recommended_action".
 """
     return prompt

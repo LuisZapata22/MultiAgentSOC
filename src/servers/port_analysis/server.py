@@ -55,7 +55,9 @@ Events:
 Specifically look for:
 1. Horizontal Scanning: One source IP connecting to the same port across many destination IPs.
 2. Vertical Scanning: One source IP connecting to many different ports on a single destination IP.
-3. Suspicious Port Usage: Use of common malware/backdoor ports, or standard services running on non-standard ports.
+3. Suspicious Port Usage: Use of common malware/backdoor ports (e.g. 4444, 1337), or standard services running on non-standard high ports.
+4. Unencrypted Protocols: Flag exposure of Telnet (23), FTP (21), or HTTP (80) if sensitive data is suspected.
+5. Do not flag standard HTTPS (443) or DNS (53) as suspicious unless the volume is anomalously high.
 
 Output your findings as a strict JSON array of objects, where each object has:
 - "finding": A brief string describing the port-related anomaly.

@@ -48,8 +48,12 @@ class ReportingAgent:
             # Pull out MITRE mappings from the findings list
             mitre_mappings = []
             for f in all_findings:
-                if "mitre_mappings" in f:
-                    mitre_mappings.extend(f["mitre_mappings"])
+                if "mitre_technique_id" in f and f["mitre_technique_id"]:
+                    mitre_mappings.append({
+                        "original_finding": f.get("finding", f.get("title", "")),
+                        "mitre_technique_id": f["mitre_technique_id"],
+                        "mitre_tactic": f.get("mitre_tactic", "")
+                    })
 
             validation_report_json = json.dumps(det_report, indent=2)
             mitre_mappings_json = json.dumps(mitre_mappings, indent=2)
@@ -92,6 +96,14 @@ class ReportingAgent:
 
             raw_text = llm_response.get("result", "{}")
             report_obj = self._extract_json(raw_text)
+
+            # Extract markdown body from raw_text
+            markdown_body = ""
+            if "=== FORMAL REPORT ===" in raw_text:
+                markdown_body = raw_text.split("=== FORMAL REPORT ===")[1].strip()
+            
+            if report_obj and isinstance(report_obj, dict):
+                report_obj["markdown_body"] = markdown_body
 
             # If LLM is unavailable, build a minimal structural report from deterministic data
             if not report_obj or "findings" not in report_obj:

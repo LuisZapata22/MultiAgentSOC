@@ -123,8 +123,8 @@ class DetectionAgent:
         internal_ips = set()
         external_ips = set()
         for evt in events:
-            src = evt.get("id.orig_h", evt.get("src_ip", ""))
-            dst = evt.get("id.resp_h", evt.get("dst_ip", ""))
+            src = evt.get("source_ip", evt.get("id.orig_h", ""))
+            dst = evt.get("destination_ip", evt.get("id.resp_h", ""))
             if src and src.startswith(("10.", "172.", "192.168.")):
                 internal_ips.add(src)
             if dst and not dst.startswith(("10.", "172.", "192.168.")):
@@ -145,8 +145,8 @@ class DetectionAgent:
         # Trigger 2: Asset criticality for flagged internal IPs
         flagged_ips = set()
         for f in findings:
-            src = f.get("src_ip", f.get("source_ip", ""))
-            dst = f.get("dst_ip", f.get("dest_ip", ""))
+            src = f.get("source_ip", f.get("src_ip", ""))
+            dst = f.get("destination_ip", f.get("dst_ip", ""))
             if src:
                 flagged_ips.add(src)
             if dst:
